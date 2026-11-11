@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ky">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Радар — Толук версия</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #030803;
+    color: #0f0;
+    font-family: 'Courier New', monospace;
+    height: 100%;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+  }
+  #radar-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    min-height: 0;
+  }
+  #radar {
+    display: block;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, #0a1a0a 0%, #020602 80%);
+    box-shadow: 0 0 40px rgba(0,255,0,0.25), inset 0 0 40px rgba(0,255,0,0.1);
+    touch-action: none;
+  }
+  #hud {
+    padding: 8px 12px 12px;
+    background: rgba(0,20,0,0.6);
+    border-top: 1px solid rgba(0,255,0,0.3);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  #status-bar {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #0f0;
+    text-shadow: 0 0 4px #0f0;
+    gap: 8px;
+  }
+  #status-bar span { opacity: 0.9; white-space: nowrap; }
+  #controls {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    font-size: 12px;
+  }
+  #controls .group {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  button {
+    background: rgba(0,40,0,0.8);
+    border: 1px solid #0a0;
+    color: #0f0;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    touch-action: manipulation;
+    text-shadow: 0 0 3px #0f0;
+    transition: background 0.15s;
+  }
+  button:active, button.active {
+    background: rgba(0,255,0,0.25);
+    border-color: #0f0;
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 70px;
+    height: 4px;
+    background: #040;
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #0f0;
+    box-shadow: 0 0 6px #0f0;
+    cursor: pointer;
+  }
+  #target-info {
+    background: rgba(0,30,0,0.85);
+    border: 1px solid rgba(0,255,0,0.4);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 12px;
+    display: none;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px 12px;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #target-info.visible { display: grid; }
+  #target-info .label { color: #0a0; }
+  #target-info .value { color: #0f0; text-align: right; text-shadow: 0 0 3px #0f0; }
+  #target-info .title {
+    grid-column: 1 / -1;
+    color: #0f0;
+    font-weight: bold;
+    border-bottom: 1px solid rgba(0,255,0,0.3);
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+    display: flex;
+    justify-content: space-between;
+  }
+  #target-info .title .id { color: #ff0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="radar-wrap">
+    <canvas id="radar"></canvas>
+  </div>
+  <div id="hud">
+    <div id="status-bar">
+      <span>Объектилер: <b id="stat-targets">0</b></span>
+      <span>Көзөмөл: <b id="stat-locked">—</b></span>
+      <span>Аралык: <b id="stat-range">50</b> км</span>
+    </div>
+    <div id="target-info">
+      <div class="title"><span>Маалымат</span><span class="id" id="ti-id">—</span></div>
+      <div class="label">Түрү</div><div class="value" id="ti-type">—</div>
+      <div class="label">Аралык</div><div class="value" id="ti-dist">—</div>
+      <div class="label">Азимут</div><div class="value" id="ti-bearing">—</div>
+      <div class="label">Ылдамдык</div><div class="value" id="ti-speed">—</div>
+      <div class="label">Багыт</div><div class="value" id="ti-heading">—</div>
+      <div class="label">Абалы</div><div class="value" id="ti-status">—</div>
+    </div>
+    <div id="controls">
+      <div class="group">
+        <span>Диапазон:</span>
+        <button data-range="25">25</button>
+        <button data-range="50" class="active">50</button>
+        <button data-range="100">100</button>
+      </div>
+      <div class="group">
+        <span>Скан:</span>
+        <input type="range" id="sweep-speed" min="10" max="100" value="40">
+      </div>
+      <button id="btn-sound" class="active">🔊 Үн</button>
+      <button id="btn-reset">↻ Жаңыртуу</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('radar');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('radar-wrap');
+
+  const statTargets = document.getElementById('stat-targets');
+  const statLocked = document.getElementById('stat-locked');
+  const statRange = document.getElementById('stat-range');
+
+  const ti = {
+    root: document.getElementById('target-info'),
+    id: document.getElementById('ti-id'),
+    type: document.getElementById('ti-type'),
+    dist: document.getElementById('ti-dist'),
+    bearing: document.getElementById('ti-bearing'),
+    speed: document.getElementById('ti-speed'),
+    heading: document.getElementById('ti-heading'),
+    status: document.getElementById('ti-status'),
+  };
+
+  // ---------- Күй ----------
+  let maxRangeKm = 50;
+  let sweepSpeed = 0.4;      // рад/сек
+  let soundEnabled = true;
+  let scanAngle = 0;         // 0 = түндүк (жогору), саат жебеси боюнча өсөт
+  let lastFrame = performance.now();
+  let targets = [];
+  let lockedTarget = null;
+  let nextId = 1;
+  let width = 0, height = 0, cx = 0, cy = 0, radius = 0;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const TIME_SCALE = 25;     // визуалдык ылдамдатуу коэффициенти
+
+  // ---------- Үн ----------
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch(e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function beep(freq = 880, dur = 0.06, vol = 0.04) {
+    if (!soundEnabled || !audioCtx) return;
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(vol, t + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  }
+
+  // ---------- Объектилер ----------
+  const TYPES = ['Учак', 'Кеме', 'Дрон', 'Вертолёт', 'Белгисиз', 'Ракета'];
+  const COLORS = {
+    'Учак': '#0ff',
+    'Кеме': '#0f0',
+    'Дрон': '#ff0',
+    'Вертолёт': '#4ff',
+    'Белгисиз': '#f80',
+    'Ракета': '#f44',
+  };
+  const SPEED_RANGES = {
+    'Учак': [400, 950],
+    'Кеме': [20, 55],
+    'Дрон': [50, 180],
+    'Вертолёт': [140, 280],
+    'Белгисиз': [100, 700],
+    'Ракета': [900, 1800],
+  };
+
+  function rand(min, max) { return min + Math.random() * (max - min); }
+
+  function randomTarget() {
+    const maxR = maxRangeKm * 0.9;
+    const a = Math.random() * Math.PI * 2;
+    const r = 3 + Math.random() * (maxR - 3);
+    const type = TYPES[Math.floor(Math.random() * TYPES.length)];
+    const [smin, smax] = SPEED_RANGES[type];
+    return {
+      id: nextId++,
+      type,
+      x: Math.sin(a) * r,             // чыгыш
+      y: Math.cos(a) * r,             // түндүк
+      heading: Math.random() * Math.PI * 2,
+      speed: rand(smin, smax),
+      size: 2 + Math.random() * 2,
+      trail: [],
+      lastPing: 0,
+      detected: false,
+      locked: false,
+    };
+  }
+
+  function spawnTargets(n) {
+    targets = [];
+    nextId = 1;
+    for (let i = 0; i < n; i++) targets.push(randomTarget());
+  }
+
+  // ---------- Геометрия ----------
+  function targetDistance(t) { return Math.hypot(t.x, t.y); }
+  function targetBearing(t) { return (Math.atan2(t.x, t.y) + Math.PI * 2) % (Math.PI * 2); }
+  function radToDeg(r) { return r * 180 / Math.PI; }
+  function toScreen(x, y) {
+    const s = radius / maxRangeKm;
+    return { sx: cx + x * s, sy: cy - y * s };
+  }
+
+  // ---------- Жаңыртуу ----------
+  function update(dt) {
+    const prevAngle = scanAngle;
+    scanAngle = (scanAngle + sweepSpeed * dt) % (Math.PI * 2);
+    const wrapped = scanAngle < prevAngle;
+
+    for (const t of targets) {
+      // Кыймыл
+      const move = (t.speed / 3600) * dt * TIME_SCALE;
+      t.x += Math.sin(t.heading) * move;
+      t.y += Math.cos(t.heading) * move;
+
+      // Чектен чагылуу
+      const maxR = maxRangeKm * 0.95;
+      const r = Math.hypot(t.x, t.y);
+      if (r > maxR) {
+        const nx = t.x / r, ny = t.y / r;
+        const hx = Math.sin(t.heading), hy = Math.cos(t.heading);
+        const dot = hx * nx + hy * ny;
+        t.heading = Math.atan2(hx - 2 * dot * nx, hy - 2 * dot * ny);
+        t.x = nx * maxR;
+        t.y = ny * maxR;
+      }
+
+      // Из
+      t.trail.push({ x: t.x, y: t.y });
+      if (t.trail.length > 15) t.trail.shift();
+
+      // Скан кесип өтүү
+      const b = targetBearing(t);
+      const crossed = wrapped ? (b > prevAngle || b <= scanAngle) : (b > prevAngle && b <= scanAngle);
+      if (crossed && targetDistance(t) <= maxRangeKm) {
+        if (!t.detected) beep(1400, 0.03, 0.02);
+        t.lastPing = performance.now();
+        t.detected = true;
+      }
+    }
+  }
+
+  // ---------- Чийүү ----------
+  function render() {
+    const now = performance.now();
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Томурткулар
+    const rings = 5;
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= rings; i++) {
+      const r = radius * i / rings;
+      const isOuter = i === rings;
+      ctx.strokeStyle = isOuter ? 'rgba(0,255,0,0.55)' : 'rgba(0,255,0,0.18)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const km = Math.round(maxRangeKm * i / rings);
+      ctx.fillStyle = 'rgba(0,255,0,0.55)';
+      ctx.font = '10px "Courier New", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(km + 'км', cx + 4, cy - r + 1);
+    }
+
+    // Радиалдык сызыктар
+    ctx.strokeStyle = 'rgba(0,255,0,0.22)';
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const inner = (i % 3 === 0) ? 0 : radius * 0.92;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.sin(a) * inner, cy - Math.cos(a) * inner);
+      ctx.lineTo(cx + Math.sin(a) * radius, cy - Math.cos(a) * radius);
+      ctx.stroke();
+    }
+
+    // N/E/S/W
+    ctx.fillStyle = 'rgba(0,255,0,0.85)';
+    ctx.font = 'bold 11px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', cx, cy - radius + 10);
+    ctx.fillText('S', cx, cy + radius - 10);
+    ctx.fillText('E', cx + radius - 10, cy);
+    ctx.fillText('W', cx - radius + 10, cy);
+
+    // Скан изи
+    const trailWidth = 0.35;
+    ctx.fillStyle = 'rgba(0,255,0,0.06)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, radius, scanAngle - trailWidth - Math.PI / 2, scanAngle - Math.PI / 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Скан сызыгы
+    const ex = cx + Math.sin(scanAngle) * radius;
+    const ey = cy - Math.cos(scanAngle) * radius;
+    const sweepGrad = ctx.createLinearGradient(cx, cy, ex, ey);
+    sweepGrad.addColorStop(0, 'rgba(0,255,0,0.0)');
+    sweepGrad.addColorStop(1, 'rgba(0,255,0,0.7)');
+    ctx.strokeStyle = sweepGrad;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+
+    // Борбордук жарк
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 0.4);
+    glow.addColorStop(0, 'rgba(0,255,0,0.08)');
+    glow.addColorStop(1, 'rgba(0,255,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, width, height);
+
+    // Объектилер
+    for (const t of targets) {
+      const d = targetDistance(t);
+      if (d > maxRangeKm * 1.02) continue;
+
+      const pos = toScreen(t.x, t.y);
+      const dtPing = now - t.lastPing;
+      const brightness = t.detected ? Math.max(0.15, 1 - dtPing / 2500) : 0.08;
+      const color = COLORS[t.type] || '#0f0';
+
+      // Из
+      if (t.trail.length > 1 && brightness > 0.2) {
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = brightness * 0.35;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < t.trail.length; i++) {
+          const p = toScreen(t.trail[i].x, t.trail[i].y);
+          if (i === 0) ctx.moveTo(p.sx, p.sy);
+          else ctx.lineTo(p.sx, p.sy);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // Нукта
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10 * brightness;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = Math.max(0.15, brightness);
+      ctx.beginPath();
+      ctx.arc(pos.sx, pos.sy, t.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Кармоо рамкасы
+      if (t.locked) {
+        const pulse = 1 + 0.15 * Math.sin(now / 150);
+        ctx.strokeStyle = '#ff0';
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.9;
+        const rr = 11 * pulse;
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+          ctx.beginPath();
+          ctx.arc(pos.sx, pos.sy, rr, a - 0.35, a + 0.35);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(pos.sx, pos.sy);
+        ctx.strokeStyle = 'rgba(255,255,0,0.4)';
+        ctx.setLineDash([3, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    ctx.restore();
+
+    // Сырткы чөйрө
+    ctx.strokeStyle = 'rgba(0,255,0,0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // ---------- HUD ----------
+  function updateHUD() {
+    statTargets.textContent = targets.length;
+    statRange.textContent = maxRangeKm;
+
+    if (lockedTarget) {
+      const d = targetDistance(lockedTarget);
+      const b = targetBearing(lockedTarget);
+      const h = (lockedTarget.heading + Math.PI * 2) % (Math.PI * 2);
+      ti.root.classList.add('visible');
+      ti.id.textContent = 'ID-' + String(lockedTarget.id).padStart(3, '0');
+      ti.type.textContent = lockedTarget.type;
+      ti.dist.textContent = d.toFixed(1) + ' км';
+      ti.bearing.textContent = radToDeg(b).toFixed(0) + '°';
+      ti.speed.textContent = lockedTarget.speed.toFixed(0) + ' км/саат';
+      ti.heading.textContent = radToDeg(h).toFixed(0) + '°';
+      ti.status.textContent = 'Көзөмөлдө';
+      ti.status.style.color = '#ff0';
+      statLocked.textContent = 'ID-' + String(lockedTarget.id).padStart(3, '0');
+    } else {
+      ti.root.classList.remove('visible');
+      statLocked.textContent = '—';
+    }
+  }
+
+  // ---------- Өлчөм ----------
+  function resize() {
+    const rect = wrap.getBoundingClientRect();
+    const size = Math.max(120, Math.min(rect.width, rect.height) - 4);
+    width = height = size;
+    canvas.width = Math.floor(size * dpr);
+    canvas.height = Math.floor(size * dpr);
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx = size / 2;
+    cy = size / 2;
+    radius = size / 2 - 4;
+  }
+
+  // ---------- Басуу ----------
+  function findTargetAt(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    let best = null, bestDist = 30;
+    for (const t of targets) {
+      if (targetDistance(t) > maxRangeKm) continue;
+      const pos = toScreen(t.x, t.y);
+      const d = Math.hypot(px - pos.sx, py - pos.sy);
+      if (d < bestDist) { bestDist = d; best = t; }
+    }
+    return best;
+  }
+
+  function lockTarget(t) {
+    if (lockedTarget) lockedTarget.locked = false;
+    lockedTarget = t;
+    if (t) {
+      t.locked = true;
+      t.detected = true;
+      t.lastPing = performance.now();
+      beep(1600, 0.08, 0.05);
+    }
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    ensureAudio();
+    const t = findTargetAt(e.clientX, e.clientY);
+    if (t) {
+      lockTarget(lockedTarget === t ? null : t);
+    } else {
+      lockTarget(null);
+    }
+  });
+
+  // ---------- Башкаруу ----------
+  document.querySelectorAll('[data-range]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-range]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const prev = maxRangeKm;
+      maxRangeKm = parseInt(btn.dataset.range, 10);
+      // Жаңы диапазонго батпаган объектилерди ордуна көчүрүү
+      if (maxRangeKm < prev) {
+        targets = targets.map(t => targetDistance(t) > maxRangeKm * 0.9 ? randomTarget() : t);
+      }
+      if (lockedTarget && targetDistance(lockedTarget) > maxRangeKm) lockTarget(null);
+    });
+  });
+
+  document.getElementById('sweep-speed').addEventListener('input', (e) => {
+    sweepSpeed = parseInt(e.target.value, 10) / 100;
+  });
+
+  document.getElementById('btn-sound').addEventListener('click', (e) => {
+    ensureAudio();
+    soundEnabled = !soundEnabled;
+    e.currentTarget.classList.toggle('active', soundEnabled);
+    e.currentTarget.textContent = soundEnabled ? '🔊 Үн' : '🔇 Үн жок';
+    if (soundEnabled) beep(1000, 0.05, 0.04);
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    lockTarget(null);
+    spawnTargets(12);
+    beep(600, 0.08, 0.05);
+  });
+
+  // ---------- Цикл ----------
+  function loop(now) {
+    const dt = Math.min(0.05, (now - lastFrame) / 1000);
+    lastFrame = now;
+    update(dt);
+    render();
+    updateHUD();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Баштоо ----------
+  if (window.ResizeObserver) {
+    new ResizeObserver(resize).observe(wrap);
+  } else {
+    window.addEventListener('resize', resize);
+  }
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+
+  resize();
+  spawnTargets(12);
+  requestAnimationFrame((t) => { lastFrame = t; loop(t); });
+})();
+</script>
+</body>
+</html>
